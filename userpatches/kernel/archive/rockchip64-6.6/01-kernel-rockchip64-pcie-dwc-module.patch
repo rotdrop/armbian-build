@@ -1,0 +1,87 @@
+From 0000000000000000000000000000000000000000 Mon Sep 17 00:00:00 2001
+From: John Doe <john.doe@somewhere.on.planet>
+Date: Wed, 9 Oct 2024 11:54:01 +0000
+Subject: Patching kernel rockchip64 files drivers/pci/controller/dwc/Kconfig
+ drivers/pci/controller/dwc/pcie-dw-rockchip.c
+
+Signed-off-by: John Doe <john.doe@somewhere.on.planet>
+---
+ drivers/pci/controller/dwc/Kconfig            |  2 +-
+ drivers/pci/controller/dwc/pcie-dw-rockchip.c | 21 +++++++++-
+ 2 files changed, 21 insertions(+), 2 deletions(-)
+
+diff --git a/drivers/pci/controller/dwc/Kconfig b/drivers/pci/controller/dwc/Kconfig
+index ab96da43e0c2..dce249fd7fbc 100644
+--- a/drivers/pci/controller/dwc/Kconfig
++++ b/drivers/pci/controller/dwc/Kconfig
+@@ -285,11 +285,11 @@ config PCIE_QCOM_EP
+ 	  Say Y here to enable support for the PCIe controllers on Qualcomm SoCs
+ 	  to work in endpoint mode. The PCIe controller uses the DesignWare core
+ 	  plus Qualcomm-specific hardware wrappers.
+ 
+ config PCIE_ROCKCHIP_DW_HOST
+-	bool "Rockchip DesignWare PCIe controller"
++	tristate "Rockchip DesignWare PCIe controller"
+ 	select PCIE_DW
+ 	select PCIE_DW_HOST
+ 	depends on PCI_MSI
+ 	depends on ARCH_ROCKCHIP || COMPILE_TEST
+ 	depends on OF
+diff --git a/drivers/pci/controller/dwc/pcie-dw-rockchip.c b/drivers/pci/controller/dwc/pcie-dw-rockchip.c
+index 9b1256da096c..d7aa6dff42c1 100644
+--- a/drivers/pci/controller/dwc/pcie-dw-rockchip.c
++++ b/drivers/pci/controller/dwc/pcie-dw-rockchip.c
+@@ -18,10 +18,12 @@
+ #include <linux/of_irq.h>
+ #include <linux/phy/phy.h>
+ #include <linux/platform_device.h>
+ #include <linux/regmap.h>
+ #include <linux/reset.h>
++#include <linux/mod_devicetable.h>
++#include <linux/module.h>
+ 
+ #include "pcie-designware.h"
+ 
+ /*
+  * The upper 16 bits of PCIE_CLIENT_CONFIG are a write
+@@ -350,19 +352,36 @@ static int rockchip_pcie_probe(struct platform_device *pdev)
+ 		regulator_disable(rockchip->vpcie3v3);
+ 
+ 	return ret;
+ }
+ 
++static void rockchip_pcie_remove(struct platform_device *pdev)
++{
++  struct rockchip_pcie *rockchip = platform_get_drvdata(pdev);
++
++  dw_pcie_host_deinit(&rockchip->pci.pp);
++  clk_bulk_disable_unprepare(rockchip->clk_cnt, rockchip->clks);
++  rockchip_pcie_phy_deinit(rockchip);
++  if (rockchip->vpcie3v3)
++    regulator_disable(rockchip->vpcie3v3);
++}
++
+ static const struct of_device_id rockchip_pcie_of_match[] = {
+ 	{ .compatible = "rockchip,rk3568-pcie", },
+ 	{},
+ };
++MODULE_DEVICE_TABLE(of, rockchip_pcie_of_match);
+ 
+ static struct platform_driver rockchip_pcie_driver = {
+ 	.driver = {
+ 		.name	= "rockchip-dw-pcie",
+ 		.of_match_table = rockchip_pcie_of_match,
+ 		.suppress_bind_attrs = true,
+ 	},
+ 	.probe = rockchip_pcie_probe,
++	.remove_new = rockchip_pcie_remove,
+ };
+-builtin_platform_driver(rockchip_pcie_driver);
++module_platform_driver(rockchip_pcie_driver);
++
++MODULE_AUTHOR("Simon Xue <xxm@rock-chips.com>");
++MODULE_DESCRIPTION("PCIe host controller driver for Rockchip SoCs");
++MODULE_LICENSE("GPL v2");
+-- 
+Created with Armbian build tools https://github.com/armbian/build
+
