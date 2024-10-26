@@ -1,0 +1,72 @@
+From 0000000000000000000000000000000000000000 Mon Sep 17 00:00:00 2001
+From: John Doe <john.doe@somewhere.on.planet>
+Date: Fri, 11 Oct 2024 03:31:00 +0000
+Subject: Patching kernel rockchip64 files drivers/power/supply/rk817_charger.c
+
+Signed-off-by: John Doe <john.doe@somewhere.on.planet>
+---
+ drivers/power/supply/rk817_charger.c | 6 ++++++
+ 1 file changed, 6 insertions(+)
+
+diff --git a/drivers/power/supply/rk817_charger.c b/drivers/power/supply/rk817_charger.c
+index 14449680246c..52018d0f66b1 100644
+--- a/drivers/power/supply/rk817_charger.c
++++ b/drivers/power/supply/rk817_charger.c
+@@ -560,13 +560,15 @@ static int rk817_bat_get_prop(struct power_supply *ps,
+ 			val->intval = 100;
+ 		if (val->intval < 0)
+ 			val->intval = 0;
+ 		break;
+ 	case POWER_SUPPLY_PROP_VOLTAGE_AVG:
++	case POWER_SUPPLY_PROP_VOLTAGE_NOW:
+ 		val->intval = charger->volt_avg_uv;
+ 		break;
+ 	case POWER_SUPPLY_PROP_CURRENT_AVG:
++	case POWER_SUPPLY_PROP_CURRENT_NOW:
+ 		val->intval = charger->cur_avg_ua;
+ 		break;
+ 	case POWER_SUPPLY_PROP_CONSTANT_CHARGE_CURRENT_MAX:
+ 		val->intval = charger->max_chg_cur_ua;
+ 		break;
+@@ -602,10 +604,11 @@ static int rk817_chg_get_prop(struct power_supply *ps,
+ 	case POWER_SUPPLY_PROP_VOLTAGE_MIN_DESIGN:
+ 		/* min voltage from datasheet at 3.8v (default 5.0v) */
+ 		val->intval = 3800000;
+ 		break;
+ 	case POWER_SUPPLY_PROP_VOLTAGE_AVG:
++	case POWER_SUPPLY_PROP_VOLTAGE_NOW:
+ 		val->intval = charger->charger_input_volt_avg_uv;
+ 		break;
+ 	/*
+ 	 * While it's possible that other implementations could use different
+ 	 * USB types, the current implementation for this PMIC (the Odroid Go
+@@ -685,12 +688,14 @@ static enum power_supply_property rk817_bat_props[] = {
+ 	POWER_SUPPLY_PROP_CHARGE_FULL_DESIGN,
+ 	POWER_SUPPLY_PROP_CHARGE_EMPTY_DESIGN,
+ 	POWER_SUPPLY_PROP_CHARGE_NOW,
+ 	POWER_SUPPLY_PROP_CONSTANT_CHARGE_VOLTAGE_MAX,
+ 	POWER_SUPPLY_PROP_VOLTAGE_AVG,
++	POWER_SUPPLY_PROP_VOLTAGE_NOW,
+ 	POWER_SUPPLY_PROP_CONSTANT_CHARGE_CURRENT_MAX,
+ 	POWER_SUPPLY_PROP_CURRENT_AVG,
++	POWER_SUPPLY_PROP_CURRENT_NOW,
+ 	POWER_SUPPLY_PROP_VOLTAGE_MIN_DESIGN,
+ 	POWER_SUPPLY_PROP_CAPACITY,
+ 	POWER_SUPPLY_PROP_VOLTAGE_MAX_DESIGN,
+ 	POWER_SUPPLY_PROP_TEMP,
+ };
+@@ -699,10 +704,11 @@ static enum power_supply_property rk817_chg_props[] = {
+ 	POWER_SUPPLY_PROP_ONLINE,
+ 	POWER_SUPPLY_PROP_USB_TYPE,
+ 	POWER_SUPPLY_PROP_VOLTAGE_MAX_DESIGN,
+ 	POWER_SUPPLY_PROP_VOLTAGE_MIN_DESIGN,
+ 	POWER_SUPPLY_PROP_VOLTAGE_AVG,
++	POWER_SUPPLY_PROP_VOLTAGE_NOW,
+ };
+ 
+ static enum power_supply_usb_type rk817_usb_type[] = {
+ 	POWER_SUPPLY_USB_TYPE_DCP,
+ 	POWER_SUPPLY_USB_TYPE_UNKNOWN,
+-- 
+Created with Armbian build tools https://github.com/armbian/build
+
