@@ -1,0 +1,30 @@
+From 0000000000000000000000000000000000000000 Mon Sep 17 00:00:00 2001
+From: John Doe <john.doe@somewhere.on.planet>
+Date: Tue, 12 Nov 2024 09:57:02 +0000
+Subject: Patching kernel rockchip64 files drivers/mfd/rk8xx-core.c
+
+Signed-off-by: John Doe <john.doe@somewhere.on.planet>
+---
+ drivers/mfd/rk8xx-core.c | 2 +-
+ 1 file changed, 1 insertion(+), 1 deletion(-)
+
+diff --git a/drivers/mfd/rk8xx-core.c b/drivers/mfd/rk8xx-core.c
+index 1ce94ee2f2c3..0733c81d7a04 100644
+--- a/drivers/mfd/rk8xx-core.c
++++ b/drivers/mfd/rk8xx-core.c
+@@ -688,11 +688,11 @@ int rk8xx_probe(struct device *dev, int variant, unsigned int irq, struct regmap
+ 	if (ret)
+ 		return dev_err_probe(dev, ret, "failed to add MFD devices\n");
+ 
+ 	if (device_property_read_bool(dev, "rockchip,system-power-controller")) {
+ 		ret = devm_register_sys_off_handler(dev,
+-				    SYS_OFF_MODE_POWER_OFF_PREPARE, SYS_OFF_PRIO_HIGH,
++				    SYS_OFF_MODE_POWER_OFF/*_PREPARE*/, SYS_OFF_PRIO_HIGH,
+ 				    &rk808_power_off, rk808);
+ 		if (ret)
+ 			return dev_err_probe(dev, ret,
+ 					     "failed to register poweroff handler\n");
+                 printk("REGISTERED RK808 POWER OFF HANDLER");
+-- 
+Created with Armbian build tools https://github.com/armbian/build
+
