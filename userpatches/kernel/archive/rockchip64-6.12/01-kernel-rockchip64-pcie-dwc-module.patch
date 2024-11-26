@@ -1,0 +1,173 @@
+From 0000000000000000000000000000000000000000 Mon Sep 17 00:00:00 2001
+From: John Doe <john.doe@somewhere.on.planet>
+Date: Mon, 18 Nov 2024 14:17:22 +0000
+Subject: Patching kernel rockchip64 files drivers/pci/controller/dwc/Kconfig
+ drivers/pci/controller/dwc/pcie-dw-rockchip.c
+
+Signed-off-by: John Doe <john.doe@somewhere.on.planet>
+---
+ drivers/pci/controller/dwc/Kconfig            | 20 +++--
+ drivers/pci/controller/dwc/pcie-dw-rockchip.c | 44 +++++++++-
+ 2 files changed, 54 insertions(+), 10 deletions(-)
+
+diff --git a/drivers/pci/controller/dwc/Kconfig b/drivers/pci/controller/dwc/Kconfig
+index b6d6778b0698..dbbe2fb8f271 100644
+--- a/drivers/pci/controller/dwc/Kconfig
++++ b/drivers/pci/controller/dwc/Kconfig
+@@ -314,35 +314,39 @@ config PCIE_RCAR_GEN4_EP
+ 	help
+ 	  Say Y here if you want PCIe controller (endpoint mode) on R-Car Gen4
+ 	  SoCs. To compile this driver as a module, choose M here: the module
+ 	  will be called pcie-rcar-gen4.ko. This uses the DesignWare core.
+ 
+-config PCIE_ROCKCHIP_DW
+-	bool
++menuconfig PCIE_ROCKCHIP_DW
++	tristate "Rockchip DesignWare PCIe controller"
++        depends on ARCH_ROCKCHIP || COMPILE_TEST
++        depends on OF
++	help
++	  Enables support for the DesignWare PCIe controller in the
++	  Rockchip SoC (except RK3399).
++
++if PCIE_ROCKCHIP_DW
+ 
+ config PCIE_ROCKCHIP_DW_HOST
+ 	bool "Rockchip DesignWare PCIe controller (host mode)"
+ 	depends on PCI_MSI
+-	depends on ARCH_ROCKCHIP || COMPILE_TEST
+-	depends on OF
+ 	select PCIE_DW_HOST
+-	select PCIE_ROCKCHIP_DW
+ 	help
+ 	  Enables support for the DesignWare PCIe controller in the
+ 	  Rockchip SoC (except RK3399) to work in host mode.
+ 
+ config PCIE_ROCKCHIP_DW_EP
+ 	bool "Rockchip DesignWare PCIe controller (endpoint mode)"
+-	depends on ARCH_ROCKCHIP || COMPILE_TEST
+-	depends on OF
+ 	depends on PCI_ENDPOINT
++        depends on PCIE_ROCKCHIP_DW="y"
+ 	select PCIE_DW_EP
+-	select PCIE_ROCKCHIP_DW
+ 	help
+ 	  Enables support for the DesignWare PCIe controller in the
+ 	  Rockchip SoC (except RK3399) to work in endpoint mode.
+ 
++endif
++
+ config PCI_EXYNOS
+ 	tristate "Samsung Exynos PCIe controller"
+ 	depends on ARCH_EXYNOS || COMPILE_TEST
+ 	depends on PCI_MSI
+ 	select PCIE_DW_HOST
+diff --git a/drivers/pci/controller/dwc/pcie-dw-rockchip.c b/drivers/pci/controller/dwc/pcie-dw-rockchip.c
+index 1170e1107508..c98b2f0e985a 100644
+--- a/drivers/pci/controller/dwc/pcie-dw-rockchip.c
++++ b/drivers/pci/controller/dwc/pcie-dw-rockchip.c
+@@ -18,10 +18,12 @@
+ #include <linux/of_irq.h>
+ #include <linux/phy/phy.h>
+ #include <linux/platform_device.h>
+ #include <linux/regmap.h>
+ #include <linux/reset.h>
++#include <linux/mod_devicetable.h>
++#include <linux/module.h>
+ 
+ #include "pcie-designware.h"
+ 
+ /*
+  * The upper 16 bits of PCIE_CLIENT_CONFIG are a write
+@@ -62,10 +64,11 @@ struct rockchip_pcie {
+ 	unsigned int clk_cnt;
+ 	struct reset_control *rst;
+ 	struct gpio_desc *rst_gpio;
+ 	struct regulator *vpcie3v3;
+ 	struct irq_domain *irq_domain;
++	unsigned int irq;
+ 	const struct rockchip_pcie_of_data *data;
+ };
+ 
+ struct rockchip_pcie_of_data {
+ 	enum dw_pcie_device_mode mode;
+@@ -228,18 +231,37 @@ static int rockchip_pcie_host_init(struct dw_pcie_rp *pp)
+ 
+ 	ret = rockchip_pcie_init_irq_domain(rockchip);
+ 	if (ret < 0)
+ 		dev_err(dev, "failed to init irq domain\n");
+ 
+-	irq_set_chained_handler_and_data(irq, rockchip_pcie_intx_handler,
++	rockchip->irq = irq;
++	irq_set_chained_handler_and_data(rockchip->irq, rockchip_pcie_intx_handler,
+ 					 rockchip);
+ 
+ 	return 0;
+ }
+ 
++static void rockchip_pcie_host_deinit(struct dw_pcie_rp *pp)
++{
++	struct dw_pcie *pci = to_dw_pcie_from_pp(pp);
++	struct rockchip_pcie *rockchip = to_rockchip_pcie(pci);
++
++	if (rockchip->irq > 0) {
++		printk("%s REMOVE IRQ HANDLE %d", __FUNCTION__, rockchip->irq);
++		irq_set_chained_handler_and_data(rockchip->irq, NULL, NULL);
++		rockchip->irq = 0;
++	}
++	if (rockchip->irq_domain) {
++		printk("%s REMOVE IRQ DOMAIN %s", __FUNCTION__, rockchip->irq_domain->name);
++		irq_domain_remove(rockchip->irq_domain);
++		rockchip->irq_domain = NULL;
++	}
++}
++
+ static const struct dw_pcie_host_ops rockchip_pcie_host_ops = {
+ 	.init = rockchip_pcie_host_init,
++	.deinit = rockchip_pcie_host_deinit,
+ };
+ 
+ static void rockchip_pcie_ep_init(struct dw_pcie_ep *ep)
+ {
+ 	struct dw_pcie *pci = to_dw_pcie_from_ep(ep);
+@@ -579,10 +601,24 @@ static int rockchip_pcie_probe(struct platform_device *pdev)
+ 		regulator_disable(rockchip->vpcie3v3);
+ 
+ 	return ret;
+ }
+ 
++static void rockchip_pcie_remove(struct platform_device *pdev)
++{
++	struct rockchip_pcie *rockchip = platform_get_drvdata(pdev);
++
++	if (rockchip->data->mode != DW_PCIE_RC_TYPE) {
++		return; // FIXMI: I can only test host-mode
++	}
++	dw_pcie_host_deinit(&rockchip->pci.pp);
++	clk_bulk_disable_unprepare(rockchip->clk_cnt, rockchip->clks);
++	rockchip_pcie_phy_deinit(rockchip);
++	if (rockchip->vpcie3v3)
++		regulator_disable(rockchip->vpcie3v3);
++}
++
+ static const struct rockchip_pcie_of_data rockchip_pcie_rc_of_data_rk3568 = {
+ 	.mode = DW_PCIE_RC_TYPE,
+ };
+ 
+ static const struct rockchip_pcie_of_data rockchip_pcie_ep_of_data_rk3568 = {
+@@ -617,6 +653,11 @@ static struct platform_driver rockchip_pcie_driver = {
+ 		.of_match_table = rockchip_pcie_of_match,
+ 		.suppress_bind_attrs = true,
+ 	},
+ 	.probe = rockchip_pcie_probe,
++	.remove_new = rockchip_pcie_remove,
+ };
+-builtin_platform_driver(rockchip_pcie_driver);
++module_platform_driver(rockchip_pcie_driver);
++
++MODULE_AUTHOR("Simon Xue <xxm@rock-chips.com>");
++MODULE_DESCRIPTION("PCIe host controller driver for Rockchip SoCs");
++MODULE_LICENSE("GPL v2");
+-- 
+Created with Armbian build tools https://github.com/armbian/build
+
