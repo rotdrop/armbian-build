@@ -1,0 +1,194 @@
+From 0000000000000000000000000000000000000000 Mon Sep 17 00:00:00 2001
+From: John Doe <john.doe@somewhere.on.planet>
+Date: Mon, 18 Nov 2024 14:24:12 +0000
+Subject: Patching kernel rockchip64 files drivers/power/supply/rk817_charger.c
+ drivers/power/supply/rk817_charger.c.orig
+ drivers/power/supply/rk817_charger.c.rej include/linux/mfd/rk808.h
+ include/linux/mfd/rk808.h.orig
+
+Signed-off-by: John Doe <john.doe@somewhere.on.planet>
+---
+ drivers/power/supply/rk817_charger.c      |   49 +-
+ include/linux/mfd/rk808.h                 |    2 +
+ include/linux/mfd/rk808.h.orig            | 1356 ++++++++++
+ 5 files changed, 2717 insertions(+), 2 deletions(-)
+
+diff --git a/drivers/power/supply/rk817_charger.c b/drivers/power/supply/rk817_charger.c
+index 57b6ddefad28..010115a83a2c 100644
+--- a/drivers/power/supply/rk817_charger.c
++++ b/drivers/power/supply/rk817_charger.c
+@@ -14,10 +14,11 @@
+ #include <linux/irq.h>
+ #include <linux/of.h>
+ #include <linux/platform_device.h>
+ #include <linux/power_supply.h>
+ #include <linux/regmap.h>
++#include <linux/int_log.h>
+ 
+ /* Charging statuses reported by hardware register */
+ enum rk817_charge_status {
+ 	CHRG_OFF,
+ 	DEAD_CHRG,
+@@ -81,11 +82,11 @@ struct rk817_charger {
+ 	 */
+ 	int fcc_mah;
+ 
+ 	/*
+ 	 * Calibrate the SOC on a fully charged battery, this way we can use
+-	 * the calibrated SOC value to correct for columb counter drift.
++	 * the calibrated SOC value to correct for coulomb counter drift.
+ 	 */
+ 	bool soc_cal;
+ 
+ 	/* Implementation specific immutable properties from device tree */
+ 	int res_div;
+@@ -93,18 +94,23 @@ struct rk817_charger {
+ 	int sleep_filter_current_ua;
+ 	int bat_charge_full_design_uah;
+ 	int bat_voltage_min_design_uv;
+ 	int bat_voltage_max_design_uv;
+ 
++	int bat_thermistor_b_constant;
++	int bat_thermistor_pivot_resistance_ohms;
++	int bat_thermistor_pivot_temperature_kelvin;
++
+ 	/* Values updated periodically by driver for display. */
+ 	int charge_now_uah;
+ 	int volt_avg_uv;
+ 	int cur_avg_ua;
+ 	int max_chg_cur_ua;
+ 	int max_chg_volt_uv;
+ 	int charge_status;
+ 	int charger_input_volt_avg_uv;
++	int bat_ts_celsius;
+ 
+ 	/* Work queue to periodically update values. */
+ 	struct delayed_work work;
+ };
+ 
+@@ -450,10 +456,30 @@ static void rk817_read_props(struct rk817_charger *charger)
+ 		charger->charger_input_volt_avg_uv = tmp * 1000;
+ 	} else {
+ 		charger->charger_input_volt_avg_uv = 0;
+ 	}
+ 
++	/*
++	 * Read thermistor value. Unfortunately, the data-sheet just
++	 * mentions "The RK817 sinks a constant current into the
++	 * thermistor" but just does not state how large this current
++	 * is. It does, however, specify the range of the ADC from 0
++	 * to 1.2 V. The correct value might be 75 uA.
++	 */
++	regmap_bulk_read(charger->rk808->regmap, RK817_GAS_GAUGE_BAT_TS_H,
++			 bulk_reg, 2);
++	tmp = get_unaligned_be16(bulk_reg);
++	/* measured resitor value assuming a constant current of 75 uA */
++	const int R = (tmp *(12 * 100000 / 75)) >> 15;
++	const int B = charger->bat_thermistor_b_constant;
++	const int R0 = charger->bat_thermistor_pivot_resistance_ohms;
++	const int T0 = charger->bat_thermistor_pivot_temperature_kelvin;
++	const u64 log_2 = (u64)0xb17218UL;
++	charger->bat_ts_celsius = (u64)(B * T0) * 100UL / ((((u64)T0 * log_2 * (u64)(intlog2(R) - intlog2(R0))) >> 48) + (B * 100UL));
++        charger->bat_ts_celsius -= 27315;
++        charger->bat_ts_celsius /= 10;
++
+ 	/* Calibrate battery capacity and soc. */
+ 	rk817_bat_calib_cap(charger);
+ }
+ 
+ static int rk817_bat_get_prop(struct power_supply *ps,
+@@ -548,10 +574,13 @@ static int rk817_bat_get_prop(struct power_supply *ps,
+ 		val->intval = charger->max_chg_volt_uv;
+ 		break;
+ 	case POWER_SUPPLY_PROP_VOLTAGE_MAX_DESIGN:
+ 		val->intval = charger->bat_voltage_max_design_uv;
+ 		break;
++	case POWER_SUPPLY_PROP_TEMP:
++		val->intval = charger->bat_ts_celsius;
++		break;
+ 	default:
+ 		return -EINVAL;
+ 	}
+ 	return 0;
+ }
+@@ -661,10 +690,11 @@ static enum power_supply_property rk817_bat_props[] = {
+ 	POWER_SUPPLY_PROP_CONSTANT_CHARGE_CURRENT_MAX,
+ 	POWER_SUPPLY_PROP_CURRENT_AVG,
+ 	POWER_SUPPLY_PROP_VOLTAGE_MIN_DESIGN,
+ 	POWER_SUPPLY_PROP_CAPACITY,
+ 	POWER_SUPPLY_PROP_VOLTAGE_MAX_DESIGN,
++	POWER_SUPPLY_PROP_TEMP,
+ };
+ 
+ static enum power_supply_property rk817_chg_props[] = {
+ 	POWER_SUPPLY_PROP_ONLINE,
+ 	POWER_SUPPLY_PROP_USB_TYPE,
+@@ -1049,11 +1079,12 @@ static void rk817_cleanup_node(void *data)
+ 
+ static int rk817_charger_probe(struct platform_device *pdev)
+ {
+ 	struct rk808 *rk808 = dev_get_drvdata(pdev->dev.parent);
+ 	struct rk817_charger *charger;
+-	struct device_node *node;
++	struct device_node *node, *battery_node;
++	struct fwnode_handle *fwnode;
+ 	struct power_supply_battery_info *bat_info;
+ 	struct device *dev = &pdev->dev;
+ 	struct power_supply_config pscfg = {};
+ 	int plugin_irq, plugout_irq;
+ 	int of_value;
+@@ -1163,10 +1194,24 @@ static int rk817_charger_probe(struct platform_device *pdev)
+ 	if (ret)
+ 		return ret;
+ 
+ 	power_supply_put_battery_info(charger->bat_ps, bat_info);
+ 
++	// read thermistor characteristics
++	battery_node = of_parse_phandle(charger->bat_ps->of_node, "monitored-battery", 0);
++	fwnode = fwnode_handle_get(of_fwnode_handle(battery_node));
++	fwnode_property_read_u32(fwnode, "thermistor-b-constant",
++				 &charger->bat_thermistor_b_constant);
++	fwnode_property_read_u32(fwnode, "thermistor-pivot-resistance-ohms",
++				 &charger->bat_thermistor_pivot_resistance_ohms);
++	fwnode_property_read_u32(fwnode, "thermistor-pivot-temperature-celsius",
++				 &charger->bat_thermistor_pivot_temperature_kelvin);
++	charger->bat_thermistor_pivot_temperature_kelvin *= 100;
++	charger->bat_thermistor_pivot_temperature_kelvin += 27315; // K
++	fwnode_handle_put(fwnode);
++	of_node_put(battery_node);
++
+ 	plugin_irq = platform_get_irq(pdev, 0);
+ 	if (plugin_irq < 0)
+ 		return plugin_irq;
+ 
+ 	plugout_irq = platform_get_irq(pdev, 1);
+From 0000000000000000000000000000000000000000 Mon Sep 17 00:00:00 2001
+From: John Doe <john.doe@somewhere.on.planet>
+Date: Mon, 18 Nov 2024 14:58:24 +0000
+Subject: Patching kernel rockchip64 files include/linux/mfd/rk808.h
+
+Signed-off-by: John Doe <john.doe@somewhere.on.planet>
+---
+ include/linux/mfd/rk808.h | 2 ++
+ 1 file changed, 2 insertions(+)
+
+diff --git a/include/linux/mfd/rk808.h b/include/linux/mfd/rk808.h
+index 69cbea78b430..96647bc73f78 100644
+--- a/include/linux/mfd/rk808.h
++++ b/include/linux/mfd/rk808.h
+@@ -1110,10 +1110,12 @@ enum rk809_reg_id {
+ #define RK817_GAS_GAUGE_Q_PRES_L0	0x77
+ #define RK817_GAS_GAUGE_BAT_VOL_H	0x78
+ #define RK817_GAS_GAUGE_BAT_VOL_L	0x79
+ #define RK817_GAS_GAUGE_BAT_CUR_H	0x7a
+ #define RK817_GAS_GAUGE_BAT_CUR_L	0x7b
++#define RK817_GAS_GAUGE_BAT_TS_H	0x7c
++#define RK817_GAS_GAUGE_BAT_TS_L	0x7d
+ #define RK817_GAS_GAUGE_USB_VOL_H	0x7e
+ #define RK817_GAS_GAUGE_USB_VOL_L	0x7f
+ #define RK817_GAS_GAUGE_SYS_VOL_H	0x80
+ #define RK817_GAS_GAUGE_SYS_VOL_L	0x81
+ #define RK817_GAS_GAUGE_Q_MAX_H3	0x82
+-- 
+Created with Armbian build tools https://github.com/armbian/build
+
