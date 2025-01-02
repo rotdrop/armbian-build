@@ -83,7 +83,7 @@ index 57b6ddefad28..010115a83a2c 100644
 +			 bulk_reg, 2);
 +	tmp = get_unaligned_be16(bulk_reg);
 +	/* measured resitor value assuming a constant current of 75 uA */
-+	const int R = (tmp *(12 * 100000 / 75)) >> 15;
++	const int R = (tmp *(12 * 100000 / 75)) >> 16;
 +	const int B = charger->bat_thermistor_b_constant;
 +	const int R0 = charger->bat_thermistor_pivot_resistance_ohms;
 +	const int T0 = charger->bat_thermistor_pivot_temperature_kelvin;
