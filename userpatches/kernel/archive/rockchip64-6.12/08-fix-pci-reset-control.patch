@@ -1,0 +1,32 @@
+From 0000000000000000000000000000000000000000 Mon Sep 17 00:00:00 2001
+From: John Doe <john.doe@somewhere.on.planet>
+Date: Fri, 3 Jan 2025 22:17:19 +0000
+Subject: Patching kernel rockchip64 files
+ drivers/phy/rockchip/phy-rockchip-naneng-combphy.c
+
+Signed-off-by: John Doe <john.doe@somewhere.on.planet>
+---
+ drivers/phy/rockchip/phy-rockchip-naneng-combphy.c | 3 ++-
+ 1 file changed, 2 insertions(+), 1 deletion(-)
+
+diff --git a/drivers/phy/rockchip/phy-rockchip-naneng-combphy.c b/drivers/phy/rockchip/phy-rockchip-naneng-combphy.c
+index 2eb3329ca23f..16c74620cda3 100644
+--- a/drivers/phy/rockchip/phy-rockchip-naneng-combphy.c
++++ b/drivers/phy/rockchip/phy-rockchip-naneng-combphy.c
+@@ -307,11 +307,12 @@ static int rockchip_combphy_parse_dt(struct device *dev, struct rockchip_combphy
+ 
+ 	priv->enable_ssc = device_property_present(dev, "rockchip,enable-ssc");
+ 
+ 	priv->ext_refclk = device_property_present(dev, "rockchip,ext-refclk");
+ 
+-	priv->phy_rst = devm_reset_control_get(dev, "phy");
++	//priv->phy_rst = devm_reset_control_get(dev, "phy");
++	priv->phy_rst = devm_reset_control_array_get_exclusive(dev);
+ 	if (IS_ERR(priv->phy_rst))
+ 		return dev_err_probe(dev, PTR_ERR(priv->phy_rst), "failed to get phy reset\n");
+ 
+ 	return 0;
+ }
+-- 
+Created with Armbian build tools https://github.com/armbian/build
+
