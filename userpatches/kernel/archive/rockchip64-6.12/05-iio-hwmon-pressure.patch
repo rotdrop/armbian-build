@@ -1,0 +1,45 @@
+From 0000000000000000000000000000000000000000 Mon Sep 17 00:00:00 2001
+From: John Doe <john.doe@somewhere.on.planet>
+Date: Thu, 28 Nov 2024 18:19:09 +0000
+Subject: Patching kernel rockchip64 files drivers/hwmon/iio_hwmon.c
+ drivers/iio/inkern.c
+
+Signed-off-by: John Doe <john.doe@somewhere.on.planet>
+---
+ drivers/hwmon/iio_hwmon.c |  6 +++-
+
+diff --git a/drivers/hwmon/iio_hwmon.c b/drivers/hwmon/iio_hwmon.c
+index e376d4cde5ad..c994b997a000 100644
+--- a/drivers/hwmon/iio_hwmon.c
++++ b/drivers/hwmon/iio_hwmon.c
+@@ -79,11 +79,11 @@ static int iio_hwmon_probe(struct platform_device *pdev)
+ {
+ 	struct device *dev = &pdev->dev;
+ 	struct iio_hwmon_state *st;
+ 	struct sensor_device_attribute *a;
+ 	int ret, i, attr = 0;
+-	int in_i = 1, temp_i = 1, curr_i = 1, humidity_i = 1, power_i = 1;
++	int in_i = 1, temp_i = 1, curr_i = 1, humidity_i = 1, power_i = 1, pressure_i = 1;
+ 	enum iio_chan_type type;
+ 	struct iio_channel *channels;
+ 	struct device *hwmon_dev;
+ 	char *sname;
+ 	void *buf;
+@@ -146,10 +146,14 @@ static int iio_hwmon_probe(struct platform_device *pdev)
+ 			break;
+ 		case IIO_HUMIDITYRELATIVE:
+ 			n = humidity_i++;
+ 			prefix = "humidity";
+ 			break;
++		case IIO_PRESSURE:
++			n = pressure_i++;
++			prefix = "pressure";
++			break;
+ 		default:
+ 			return -EINVAL;
+ 		}
+ 
+ 		a->dev_attr.attr.name = devm_kasprintf(dev, GFP_KERNEL,
+-- 
+Created with Armbian build tools https://github.com/armbian/build
+
