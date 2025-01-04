@@ -1,0 +1,67 @@
+From 0000000000000000000000000000000000000000 Mon Sep 17 00:00:00 2001
+From: John Doe <john.doe@somewhere.on.planet>
+Date: Mon, 2 Dec 2024 16:58:55 +0000
+Subject: Patching kernel rockchip64 files drivers/power/supply/rk817_charger.c
+
+Signed-off-by: John Doe <john.doe@somewhere.on.planet>
+---
+ drivers/power/supply/rk817_charger.c | 6 ++++++
+ 1 file changed, 6 insertions(+)
+
+diff --git a/drivers/power/supply/rk817_charger.c b/drivers/power/supply/rk817_charger.c
+index 80405e7232cc..55ebeddf9512 100644
+--- a/drivers/power/supply/rk817_charger.c
++++ b/drivers/power/supply/rk817_charger.c
+@@ -107,10 +107,11 @@ struct rk817_charger {
+ 	int max_chg_cur_ua;
+ 	int max_chg_volt_uv;
+ 	int charge_status;
+ 	int charger_input_volt_avg_uv;
+ 	int bat_ts_celsius;
++	int bat_ts_raw;
+ 
+ 	/* Work queue to periodically update values. */
+ 	struct delayed_work work;
+ };
+ 
+@@ -466,10 +467,11 @@ static void rk817_read_props(struct rk817_charger *charger)
+ 	 * to 1.2 V. The correct value might be 75 uA.
+ 	 */
+ 	regmap_bulk_read(charger->rk808->regmap, RK817_GAS_GAUGE_BAT_TS_H,
+ 			 bulk_reg, 2);
+ 	tmp = get_unaligned_be16(bulk_reg);
++	charger->bat_ts_raw = tmp;
+ 	/* measured resitor value assuming a constant current of 75 uA */
+ 	const int R = (tmp *(12 * 100000 / 75)) >> 16;
+ 	const int B = charger->bat_thermistor_b_constant;
+ 	const int R0 = charger->bat_thermistor_pivot_resistance_ohms;
+ 	const int T0 = charger->bat_thermistor_pivot_temperature_kelvin;
+@@ -579,10 +581,13 @@ static int rk817_bat_get_prop(struct power_supply *ps,
+ 		val->intval = charger->bat_voltage_max_design_uv;
+ 		break;
+ 	case POWER_SUPPLY_PROP_TEMP:
+ 		val->intval = charger->bat_ts_celsius;
+ 		break;
++	case POWER_SUPPLY_PROP_TEMP_AMBIENT:
++		val->intval = charger->bat_ts_raw;
++		break;
+ 	default:
+ 		return -EINVAL;
+ 	}
+ 	return 0;
+ }
+@@ -696,10 +701,11 @@ static enum power_supply_property rk817_bat_props[] = {
+ 	POWER_SUPPLY_PROP_CURRENT_NOW,
+ 	POWER_SUPPLY_PROP_VOLTAGE_MIN_DESIGN,
+ 	POWER_SUPPLY_PROP_CAPACITY,
+ 	POWER_SUPPLY_PROP_VOLTAGE_MAX_DESIGN,
+ 	POWER_SUPPLY_PROP_TEMP,
++	POWER_SUPPLY_PROP_TEMP_AMBIENT,
+ };
+ 
+ static enum power_supply_property rk817_chg_props[] = {
+ 	POWER_SUPPLY_PROP_ONLINE,
+ 	POWER_SUPPLY_PROP_USB_TYPE,
+-- 
+Created with Armbian build tools https://github.com/armbian/build
+

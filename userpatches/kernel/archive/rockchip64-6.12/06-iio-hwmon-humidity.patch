@@ -1,0 +1,44 @@
+From 0000000000000000000000000000000000000000 Mon Sep 17 00:00:00 2001
+From: John Doe <john.doe@somewhere.on.planet>
+Date: Thu, 28 Nov 2024 20:39:01 +0000
+Subject: Patching kernel rockchip64 files drivers/hwmon/iio_hwmon.c
+
+Signed-off-by: John Doe <john.doe@somewhere.on.planet>
+---
+ drivers/hwmon/iio_hwmon.c | 13 ++++++++--
+ 1 file changed, 11 insertions(+), 2 deletions(-)
+
+diff --git a/drivers/hwmon/iio_hwmon.c b/drivers/hwmon/iio_hwmon.c
+index c994b997a000..524459d8e335 100644
+--- a/drivers/hwmon/iio_hwmon.c
++++ b/drivers/hwmon/iio_hwmon.c
+@@ -62,15 +62,24 @@ static ssize_t iio_hwmon_read_val(struct device *dev,
+ 
+ 	ret = iio_get_channel_type(chan, &type);
+ 	if (ret < 0)
+ 		return ret;
+ 
+-	if (type == IIO_POWER)
++	switch (type) {
++	case IIO_POWER:
+ 		/* mili-Watts to micro-Watts conversion */
+ 		ret = iio_read_channel_processed_scale(chan, &result, 1000);
+-	else
++		break;
++	case IIO_HUMIDITYRELATIVE:
+ 		ret = iio_read_channel_processed(chan, &result);
++		if (ret >= 0)
++			result = (result + 500) / 1000;
++		break;
++	default:
++		ret = iio_read_channel_processed(chan, &result);
++		break;
++	}
+ 	if (ret < 0)
+ 		return ret;
+ 
+ 	return sprintf(buf, "%d\n", result);
+ }
+-- 
+Created with Armbian build tools https://github.com/armbian/build
+
