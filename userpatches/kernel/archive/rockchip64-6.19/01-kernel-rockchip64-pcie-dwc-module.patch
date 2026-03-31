@@ -174,3 +174,46 @@ index f8605fe61a41..44e0af36ca79 100644
 -- 
 Created with Armbian build tools https://github.com/armbian/build
 
+From 0000000000000000000000000000000000000000 Mon Sep 17 00:00:00 2001
+From: John Doe <john.doe@somewhere.on.planet>
+Date: Wed, 25 Feb 2026 14:31:48 +0000
+Subject: Patching kernel rockchip64 files
+ drivers/pci/controller/dwc/pcie-dw-rockchip.c
+
+Signed-off-by: John Doe <john.doe@somewhere.on.planet>
+---
+ drivers/pci/controller/dwc/pcie-dw-rockchip.c | 3 ++-
+ 1 file changed, 2 insertions(+), 1 deletion(-)
+
+diff --git a/drivers/pci/controller/dwc/pcie-dw-rockchip.c b/drivers/pci/controller/dwc/pcie-dw-rockchip.c
+index 44e0af36ca79..f0c3ae67f7e4 100644
+--- a/drivers/pci/controller/dwc/pcie-dw-rockchip.c
++++ b/drivers/pci/controller/dwc/pcie-dw-rockchip.c
+@@ -88,10 +88,11 @@ struct rockchip_pcie {
+ 	struct phy *phy;
+ 	struct clk_bulk_data *clks;
+ 	unsigned int clk_cnt;
+ 	struct reset_control *rst;
+ 	struct gpio_desc *rst_gpio;
++	struct	regulator *vpcie3v3; /* 3.3V power supply */
+ 	struct irq_domain *irq_domain;
+ 	unsigned int irq;
+ 	const struct rockchip_pcie_of_data *data;
+ 	bool supports_clkreq;
+ };
+@@ -711,11 +712,11 @@ static int rockchip_pcie_probe(struct platform_device *pdev)
+ 	ret = reset_control_assert(rockchip->rst);
+ 	if (ret)
+ 		return ret;
+ 
+ 	/* DON'T MOVE ME: must be enable before PHY init */
+-	ret = devm_regulator_get_enable_optional(dev, "vpcie3v3");
++	rockchip->vpcie3v3 = ret = devm_regulator_get_enable_optional(dev, "vpcie3v3");
+ 	if (ret < 0 && ret != -ENODEV)
+ 		return dev_err_probe(dev, ret,
+ 				     "failed to enable vpcie3v3 regulator\n");
+ 
+ 	ret = rockchip_pcie_phy_init(rockchip);
+-- 
+Created with Armbian build tools https://github.com/armbian/build
+
