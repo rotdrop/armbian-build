@@ -1,0 +1,50 @@
+From 0000000000000000000000000000000000000000 Mon Sep 17 00:00:00 2001
+From: John Doe <john.doe@somewhere.on.planet>
+Date: Sun, 20 Sep 2026 14:51:40 +0000
+Subject: Patching kernel rockchip64 files
+ drivers/power/supply/power_supply_core.c
+
+Signed-off-by: John Doe <john.doe@somewhere.on.planet>
+---
+ drivers/power/supply/power_supply_core.c | 10 ++++++++--
+ 1 file changed, 8 insertions(+), 2 deletions(-)
+
+diff --git a/drivers/power/supply/power_supply_core.c b/drivers/power/supply/power_supply_core.c
+index 2532e221b2e1..58c6e68b2d47 100644
+--- a/drivers/power/supply/power_supply_core.c
++++ b/drivers/power/supply/power_supply_core.c
+@@ -1103,10 +1103,14 @@ EXPORT_SYMBOL_GPL(power_supply_get_maintenance_charging_setting);
+ int power_supply_ocv2cap_simple(const struct power_supply_battery_ocv_table *table,
+ 				int table_len, int ocv)
+ {
+ 	int i, high, low;
+ 
++	for (i = 0; i < table_len; i++) {
++          printk("OCV TABLE %d %d", table[i].ocv, table[i].capacity);
++        }
++
+ 	for (i = 0; i < table_len; i++)
+ 		if (ocv > table[i].ocv)
+ 			break;
+ 
+ 	/* The library function will deal with high == low */
+@@ -1158,12 +1162,14 @@ int power_supply_batinfo_ocv2cap(struct power_supply_battery_info *info,
+ {
+ 	const struct power_supply_battery_ocv_table *table;
+ 	int table_len;
+ 
+ 	table = power_supply_find_ocv2cap_table(info, temp, &table_len);
+-	if (!table)
+-		return -EINVAL;
++	if (!table) {
++          printk("*** NO OCV BAT TABLE");
++	  return -EINVAL;
++        }
+ 
+ 	return power_supply_ocv2cap_simple(table, table_len, ocv);
+ }
+ EXPORT_SYMBOL_GPL(power_supply_batinfo_ocv2cap);
+ 
+-- 
+Created with Armbian build tools https://github.com/armbian/build
+
