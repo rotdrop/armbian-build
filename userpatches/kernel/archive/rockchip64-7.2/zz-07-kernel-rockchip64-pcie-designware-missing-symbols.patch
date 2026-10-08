@@ -1,0 +1,30 @@
+From 0000000000000000000000000000000000000000 Mon Sep 17 00:00:00 2001
+From: John Doe <john.doe@somewhere.on.planet>
+Date: Mon, 21 Sep 2026 06:05:41 +0000
+Subject: Patching kernel rockchip64 files
+ drivers/pci/controller/dwc/pcie-designware.c
+
+Signed-off-by: John Doe <john.doe@somewhere.on.planet>
+---
+ drivers/pci/controller/dwc/pcie-designware.c | 1 +
+ 1 file changed, 1 insertion(+)
+
+diff --git a/drivers/pci/controller/dwc/pcie-designware.c b/drivers/pci/controller/dwc/pcie-designware.c
+index ec4722ed9303..2aadf58005da 100644
+--- a/drivers/pci/controller/dwc/pcie-designware.c
++++ b/drivers/pci/controller/dwc/pcie-designware.c
+@@ -753,10 +753,11 @@ const char *dw_pcie_ltssm_status_string(enum dw_pcie_ltssm ltssm)
+ 		break;
+ 	}
+ 
+ 	return str + strlen("DW_PCIE_LTSSM_");
+ }
++EXPORT_SYMBOL_GPL(dw_pcie_ltssm_status_string);
+ 
+ /**
+  * dw_pcie_wait_for_link - Wait for the PCIe link to be up
+  * @pci: DWC instance
+  *
+-- 
+Created with Armbian build tools https://github.com/armbian/build
+
