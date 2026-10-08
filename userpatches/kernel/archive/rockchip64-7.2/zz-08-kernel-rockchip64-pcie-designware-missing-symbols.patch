@@ -1,0 +1,26 @@
+From 0000000000000000000000000000000000000000 Mon Sep 17 00:00:00 2001
+From: John Doe <john.doe@somewhere.on.planet>
+Date: Thu, 8 Oct 2026 08:06:13 +0000
+Subject: Patching kernel rockchip64 files drivers/pci/trace.c
+
+Signed-off-by: John Doe <john.doe@somewhere.on.planet>
+---
+ drivers/pci/trace.c | 3 +++
+ 1 file changed, 3 insertions(+)
+
+diff --git a/drivers/pci/trace.c b/drivers/pci/trace.c
+index c1da9d3d39d6..43fb6fc9e2bc 100644
+--- a/drivers/pci/trace.c
++++ b/drivers/pci/trace.c
+@@ -8,5 +8,8 @@
+ #include <linux/pci.h>
+ 
+ #define CREATE_TRACE_POINTS
+ #include <trace/events/pci.h>
+ #include <trace/events/pci_controller.h>
++
++EXPORT_SYMBOL_GPL(__tracepoint_pcie_ltssm_state_transition);
++EXPORT_SYMBOL_GPL(__traceiter_pcie_ltssm_state_transition);
+-- 
+Created with Armbian build tools https://github.com/armbian/build
+
