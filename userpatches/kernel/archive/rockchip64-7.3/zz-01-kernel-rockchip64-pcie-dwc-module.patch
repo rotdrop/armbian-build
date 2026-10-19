@@ -1,14 +1,14 @@
 From 0000000000000000000000000000000000000000 Mon Sep 17 00:00:00 2001
 From: John Doe <john.doe@somewhere.on.planet>
-Date: Thu, 8 Oct 2026 09:32:19 +0000
+Date: Sun, 18 Oct 2026 16:27:15 +0000
 Subject: Patching kernel rockchip64 files drivers/pci/controller/dwc/Kconfig
  drivers/pci/controller/dwc/pcie-dw-rockchip.c
 
 Signed-off-by: John Doe <john.doe@somewhere.on.planet>
 ---
  drivers/pci/controller/dwc/Kconfig            | 19 ++--
- drivers/pci/controller/dwc/pcie-dw-rockchip.c | 46 +++++++++-
- 2 files changed, 55 insertions(+), 10 deletions(-)
+ drivers/pci/controller/dwc/pcie-dw-rockchip.c | 43 +++++++++-
+ 2 files changed, 53 insertions(+), 9 deletions(-)
 
 diff --git a/drivers/pci/controller/dwc/Kconfig b/drivers/pci/controller/dwc/Kconfig
 index dcfbe7e229fd..62be1fcce655 100644
@@ -63,7 +63,7 @@ index dcfbe7e229fd..62be1fcce655 100644
  	depends on PCI_MSI
  	select PCIE_DW_HOST
 diff --git a/drivers/pci/controller/dwc/pcie-dw-rockchip.c b/drivers/pci/controller/dwc/pcie-dw-rockchip.c
-index 2f325406653d..041f210490f6 100644
+index 329f1e649acf..4564588bcbb3 100644
 --- a/drivers/pci/controller/dwc/pcie-dw-rockchip.c
 +++ b/drivers/pci/controller/dwc/pcie-dw-rockchip.c
 @@ -22,10 +22,12 @@
@@ -79,21 +79,19 @@ index 2f325406653d..041f210490f6 100644
  #include "../pci-host-common.h"
  #include "pcie-designware.h"
  
-@@ -110,11 +112,13 @@ struct rockchip_pcie {
- 	struct phy *phy;
- 	struct clk_bulk_data *clks;
+@@ -121,10 +123,11 @@ struct rockchip_pcie {
  	unsigned int clk_cnt;
  	struct reset_control *rst;
  	struct gpio_desc *rst_gpio;
-+	struct	regulator *vpcie3v3; /* 3.3V power supply */
+ 	struct regulator *vpcie3v3;
  	struct irq_domain *irq_domain;
-+	unsigned int irq;
++	u32 irq;
+ 	u32 intx;
  	const struct rockchip_pcie_of_data *data;
  	bool supports_clkreq;
  	struct delayed_work trace_work;
  };
- 
-@@ -433,10 +437,11 @@ static int rockchip_pcie_host_init(struct dw_pcie_rp *pp)
+@@ -446,10 +449,11 @@ static int rockchip_pcie_host_init(struct dw_pcie_rp *pp)
  
  	ret = rockchip_pcie_init_irq_domain(rockchip);
  	if (ret < 0)
@@ -105,53 +103,40 @@ index 2f325406653d..041f210490f6 100644
  
  	rockchip_pcie_configure_l1ss(pci);
  	rockchip_pcie_enable_l0s(pci);
-@@ -447,12 +452,30 @@ static int rockchip_pcie_host_init(struct dw_pcie_rp *pp)
- 	dw_pcie_writel_dbi2(pci, PCI_BASE_ADDRESS_1, 0x0);
- 
- 	return 0;
+@@ -512,12 +516,30 @@ static void rockchip_pcie_pme_turn_off(struct dw_pcie_rp *pp)
+ 				 PCIE_PME_TO_L2_TIMEOUT_US);
+ 	if (ret)
+ 		dev_err(dev, "Failed to get ready to enter L23 message\n");
  }
  
 +static void rockchip_pcie_host_deinit(struct dw_pcie_rp *pp)
 +{
-+	struct dw_pcie *pci = to_dw_pcie_from_pp(pp);
-+	struct rockchip_pcie *rockchip = to_rockchip_pcie(pci);
++       struct dw_pcie *pci = to_dw_pcie_from_pp(pp);
++       struct rockchip_pcie *rockchip = to_rockchip_pcie(pci);
 +
-+	if (rockchip->irq > 0) {
-+		printk("%s REMOVE IRQ HANDLE %d", __FUNCTION__, rockchip->irq);
-+		irq_set_chained_handler_and_data(rockchip->irq, NULL, NULL);
-+		rockchip->irq = 0;
-+	}
-+	if (rockchip->irq_domain) {
-+		printk("%s REMOVE IRQ DOMAIN %s", __FUNCTION__, rockchip->irq_domain->name);
-+		irq_domain_remove(rockchip->irq_domain);
-+		rockchip->irq_domain = NULL;
-+	}
++       if (rockchip->irq > 0) {
++               printk("%s REMOVE IRQ HANDLE %d", __FUNCTION__, rockchip->irq);
++               irq_set_chained_handler_and_data(rockchip->irq, NULL, NULL);
++               rockchip->irq = 0;
++       }
++       if (rockchip->irq_domain) {
++               printk("%s REMOVE IRQ DOMAIN %s", __FUNCTION__, rockchip->irq_domain->name);
++               irq_domain_remove(rockchip->irq_domain);
++               rockchip->irq_domain = NULL;
++       }
 +}
 +
  static const struct dw_pcie_host_ops rockchip_pcie_host_ops = {
  	.init = rockchip_pcie_host_init,
 +	.deinit = rockchip_pcie_host_deinit,
+ 	.post_init = rockchip_pcie_host_post_init,
+ 	.pme_turn_off = rockchip_pcie_pme_turn_off,
  };
  
  /*
-  * ATS does not work on RK3588 when running in EP mode.
-  *
-@@ -851,11 +874,11 @@ static int rockchip_pcie_probe(struct platform_device *pdev)
- 	ret = reset_control_assert(rockchip->rst);
- 	if (ret)
- 		return ret;
- 
- 	/* DON'T MOVE ME: must be enable before PHY init */
--	ret = devm_regulator_get_enable_optional(dev, "vpcie3v3");
-+	rockchip->vpcie3v3 = ret = devm_regulator_get_enable_optional(dev, "vpcie3v3");
- 	if (ret < 0 && ret != -ENODEV)
- 		return dev_err_probe(dev, ret,
- 				     "failed to enable vpcie3v3 regulator\n");
- 
- 	ret = rockchip_pcie_phy_init(rockchip);
-@@ -968,10 +991,24 @@ static int rockchip_pcie_rc_reset_root_port(struct pci_host_bridge *bridge,
- 	rockchip_pcie_phy_deinit(rockchip);
- 
+@@ -1158,10 +1180,24 @@ static int rockchip_pcie_resume(struct device *dev)
+ err_disable_clk:
+ 	clk_bulk_disable_unprepare(rockchip->clk_cnt, rockchip->clks);
  	return ret;
  }
  
@@ -174,10 +159,10 @@ index 2f325406653d..041f210490f6 100644
  };
  
  static const struct rockchip_pcie_of_data rockchip_pcie_ep_of_data_rk3568 = {
-@@ -1005,7 +1042,12 @@ static struct platform_driver rockchip_pcie_driver = {
- 		.name	= "rockchip-dw-pcie",
+@@ -1201,7 +1237,12 @@ static struct platform_driver rockchip_pcie_driver = {
  		.of_match_table = rockchip_pcie_of_match,
  		.suppress_bind_attrs = true,
+ 		.pm = &rockchip_pcie_pm_ops,
  	},
  	.probe = rockchip_pcie_probe,
 +	.remove = rockchip_pcie_remove,
