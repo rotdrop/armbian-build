@@ -1,0 +1,34 @@
+/dts-v1/;
+/plugin/;
+
+/*
+ * Quartz64 A: tune gmac1 for 1 Gbit.
+ * Install on the board (compiles, copies to /boot/overlay-user/ and sets user_overlays):
+ *   sudo armbian-add-overlay rk3566-quartz64a-gmac1-tuning.dts
+ *   sudo reboot
+ *
+ * Manual install:
+ *   dtc -@ -I dts -O dtb -o rk3566-quartz64a-gmac1-tuning.dtbo rk3566-quartz64a-gmac1-tuning.dts
+ *   sudo cp rk3566-quartz64a-gmac1-tuning.dtbo /boot/overlay-user/
+ *   Add to /boot/armbianEnv.txt: user_overlays=rk3566-quartz64a-gmac1-tuning
+ *   sudo reboot
+ *
+ * Verify: ethtool -S eth0, and iperf3 in both directions.
+ */
+
+/ {
+	compatible = "pine64,quartz64-a", "rockchip,rk3566";
+};
+
+&gmac1 {
+	pinctrl-names = "default";
+	pinctrl-0 = <&gmac1m0_miim
+		     &gmac1m0_tx_bus2_level3
+		     &gmac1m0_rx_bus2
+		     &gmac1m0_rgmii_clk_level2
+		     &gmac1m0_clkinout
+		     &gmac1m0_rgmii_bus>;
+	/* Upstream values. Sweep these while measuring with iperf3. */
+	tx_delay = <0x30>;
+	rx_delay = <0x10>;
+};
