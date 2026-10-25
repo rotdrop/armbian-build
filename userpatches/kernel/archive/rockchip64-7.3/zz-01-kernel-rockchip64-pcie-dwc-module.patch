@@ -1,6 +1,6 @@
 From 0000000000000000000000000000000000000000 Mon Sep 17 00:00:00 2001
 From: John Doe <john.doe@somewhere.on.planet>
-Date: Sun, 18 Oct 2026 16:27:15 +0000
+Date: Sun, 25 Oct 2026 16:08:26 +0000
 Subject: Patching kernel rockchip64 files drivers/pci/controller/dwc/Kconfig
  drivers/pci/controller/dwc/pcie-dw-rockchip.c
 
@@ -63,7 +63,7 @@ index dcfbe7e229fd..62be1fcce655 100644
  	depends on PCI_MSI
  	select PCIE_DW_HOST
 diff --git a/drivers/pci/controller/dwc/pcie-dw-rockchip.c b/drivers/pci/controller/dwc/pcie-dw-rockchip.c
-index 329f1e649acf..4564588bcbb3 100644
+index 52fc1b3d7573..8ab9b1aa968a 100644
 --- a/drivers/pci/controller/dwc/pcie-dw-rockchip.c
 +++ b/drivers/pci/controller/dwc/pcie-dw-rockchip.c
 @@ -22,10 +22,12 @@
@@ -91,19 +91,7 @@ index 329f1e649acf..4564588bcbb3 100644
  	bool supports_clkreq;
  	struct delayed_work trace_work;
  };
-@@ -446,10 +449,11 @@ static int rockchip_pcie_host_init(struct dw_pcie_rp *pp)
- 
- 	ret = rockchip_pcie_init_irq_domain(rockchip);
- 	if (ret < 0)
- 		dev_err(dev, "failed to init irq domain\n");
- 
-+	rockchip->irq = irq;
- 	irq_set_chained_handler_and_data(irq, rockchip_pcie_intx_handler,
- 					 rockchip);
- 
- 	rockchip_pcie_configure_l1ss(pci);
- 	rockchip_pcie_enable_l0s(pci);
-@@ -512,12 +516,30 @@ static void rockchip_pcie_pme_turn_off(struct dw_pcie_rp *pp)
+@@ -498,12 +501,30 @@ static void rockchip_pcie_pme_turn_off(struct dw_pcie_rp *pp)
  				 PCIE_PME_TO_L2_TIMEOUT_US);
  	if (ret)
  		dev_err(dev, "Failed to get ready to enter L23 message\n");
@@ -134,7 +122,19 @@ index 329f1e649acf..4564588bcbb3 100644
  };
  
  /*
-@@ -1158,10 +1180,24 @@ static int rockchip_pcie_resume(struct device *dev)
+@@ -818,10 +839,11 @@ static int rockchip_pcie_configure_rc(struct platform_device *pdev,
+ 	if (ret < 0) {
+ 		dev_err(dev, "failed to init irq domain\n");
+ 		return ret;
+ 	}
+ 
++	rockchip->irq = irq;
+ 	irq_set_chained_handler_and_data(irq, rockchip_pcie_intx_handler,
+ 					 rockchip);
+ 
+ 	pp = &rockchip->pci.pp;
+ 	pp->ops = &rockchip_pcie_host_ops;
+@@ -1157,10 +1179,24 @@ static int rockchip_pcie_resume(struct device *dev)
  err_disable_clk:
  	clk_bulk_disable_unprepare(rockchip->clk_cnt, rockchip->clks);
  	return ret;
@@ -159,7 +159,7 @@ index 329f1e649acf..4564588bcbb3 100644
  };
  
  static const struct rockchip_pcie_of_data rockchip_pcie_ep_of_data_rk3568 = {
-@@ -1201,7 +1237,12 @@ static struct platform_driver rockchip_pcie_driver = {
+@@ -1200,7 +1236,12 @@ static struct platform_driver rockchip_pcie_driver = {
  		.of_match_table = rockchip_pcie_of_match,
  		.suppress_bind_attrs = true,
  		.pm = &rockchip_pcie_pm_ops,
