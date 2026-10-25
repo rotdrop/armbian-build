@@ -6,21 +6,21 @@ Subject: Patching kernel rockchip64 files drivers/power/supply/rk817_charger.c
 
 Signed-off-by: John Doe <john.doe@somewhere.on.planet>
 ---
- drivers/power/supply/rk817_charger.c | 49 +++++++++-
+ drivers/power/supply/rk817_charger.c | 97 +++++++++++++++++++++++++-
  include/linux/mfd/rk808.h            |  2 +
- 2 files changed, 49 insertions(+), 2 deletions(-)
+ 2 files changed, 99 insertions(+), 2 deletions(-)
 
 diff --git a/drivers/power/supply/rk817_charger.c b/drivers/power/supply/rk817_charger.c
-index 2b0d5bdc6dd6..4497bf59bd09 100644
 --- a/drivers/power/supply/rk817_charger.c
 +++ b/drivers/power/supply/rk817_charger.c
-@@ -14,10 +14,11 @@
+@@ -14,10 +14,12 @@
  #include <linux/irq.h>
  #include <linux/of.h>
  #include <linux/platform_device.h>
  #include <linux/power_supply.h>
  #include <linux/regmap.h>
 +#include <linux/int_log.h>
++#include <linux/math64.h>
  
  /* Charging statuses reported by hardware register */
  enum rk817_charge_status {
@@ -39,15 +39,16 @@ index 2b0d5bdc6dd6..4497bf59bd09 100644
  
  	/* Implementation specific immutable properties from device tree */
  	int res_div;
-@@ -112,19 +113,24 @@ struct rk817_charger {
+@@ -112,19 +114,26 @@ struct rk817_charger {
  	int sleep_filter_current_ua;
  	int bat_charge_full_design_uah;
  	int bat_voltage_min_design_uv;
  	int bat_voltage_max_design_uv;
  
-+	int bat_thermistor_b_constant;
-+	int bat_thermistor_pivot_resistance_ohms;
-+	int bat_thermistor_pivot_temperature_kelvin;
++	u32 bat_thermistor_b_constant;
++	u32 bat_thermistor_pivot_resistance_ohms;
++	u32 bat_thermistor_pivot_temperature_kelvin;
++	bool bat_thermistor_valid;
 +
  	/* Values updated periodically by driver for display. */
  	int charge_now_uah;
@@ -58,58 +59,85 @@ index 2b0d5bdc6dd6..4497bf59bd09 100644
  	int charge_status;
  	int charger_input_volt_avg_uv;
  	u32 usb_input_current_limit_ua;
-+	int bat_ts_celsius;
++	int bat_ts_decicelsius;
++	bool bat_ts_valid;
  
  	/* Work queue to periodically update values. */
  	struct delayed_work work;
  };
  
-@@ -473,10 +479,30 @@ static void rk817_read_props(struct rk817_charger *charger)
+@@ -473,10 +482,54 @@ static void rk817_read_props(struct rk817_charger *charger)
  		charger->charger_input_volt_avg_uv = tmp * 1000;
  	} else {
  		charger->charger_input_volt_avg_uv = 0;
  	}
  
 +	/*
-+	 * Read thermistor value. Unfortunately, the data-sheet just
-+	 * mentions "The RK817 sinks a constant current into the
-+	 * thermistor" but just does not state how large this current
-+	 * is. It does, however, specify the range of the ADC from 0
-+	 * to 1.2 V. The correct value might be 75 uA.
++	 * The ADC spans 0 to 1.2 V. The datasheet does not specify the
++	 * thermistor current; 75 uA is the measured value used here.
 +	 */
-+	regmap_bulk_read(charger->rk808->regmap, RK817_GAS_GAUGE_BAT_TS_H,
-+			 bulk_reg, 2);
-+	tmp = get_unaligned_be16(bulk_reg);
-+	/* measured resitor value assuming a constant current of 75 uA */
-+	const int R = (tmp *(12 * 100000 / 75)) >> 16;
-+	const int B = charger->bat_thermistor_b_constant;
-+	const int R0 = charger->bat_thermistor_pivot_resistance_ohms;
-+	const int T0 = charger->bat_thermistor_pivot_temperature_kelvin;
-+	const u64 log_2 = (u64)0xb17218UL;
-+	charger->bat_ts_celsius = (u64)(B * T0) * 100UL / ((((u64)T0 * log_2 * (u64)(intlog2(R) - intlog2(R0))) >> 48) + (B * 100UL));
-+        charger->bat_ts_celsius -= 27315;
-+        charger->bat_ts_celsius /= 10;
++	if (charger->bat_thermistor_valid) {
++		int ret;
++
++		charger->bat_ts_valid = false;
++		ret = regmap_bulk_read(charger->rk808->regmap,
++				       RK817_GAS_GAUGE_BAT_TS_H, bulk_reg, 2);
++		if (ret) {
++			dev_err_ratelimited(charger->dev,
++					    "failed to read battery thermistor: %d\n",
++					    ret);
++		} else {
++			u32 resistance = (get_unaligned_be16(bulk_reg) * 16000U) >> 16;
++
++			if (resistance) {
++				s64 log_ratio, numerator, denominator, temp_ck;
++
++				/* Convert log2(R/R0) to ln(R/R0), both in Q24. */
++				log_ratio = (s64)intlog2(resistance) -
++					    intlog2(charger->bat_thermistor_pivot_resistance_ohms);
++				log_ratio = div_s64(log_ratio * 11629080LL,
++						    1LL << 24);
++				numerator = (s64)charger->bat_thermistor_b_constant *
++					    charger->bat_thermistor_pivot_temperature_kelvin *
++					    100;
++				denominator =
++					(s64)charger->bat_thermistor_b_constant * 100 +
++					div_s64((s64)charger->bat_thermistor_pivot_temperature_kelvin *
++						log_ratio, 1LL << 24);
++				if (denominator > 0) {
++					temp_ck = div_s64(numerator, denominator);
++					if (temp_ck <= 0x7fffffffLL) {
++						charger->bat_ts_decicelsius =
++							div_s64(temp_ck - 27315, 10);
++						charger->bat_ts_valid = true;
++					}
++				}
++			}
++		}
++	}
 +
  	/* Calibrate battery capacity and soc. */
  	rk817_bat_calib_cap(charger);
  }
  
  static int rk817_bat_get_prop(struct power_supply *ps,
-@@ -571,10 +597,13 @@ static int rk817_bat_get_prop(struct power_supply *ps,
+@@ -571,10 +624,15 @@ static int rk817_bat_get_prop(struct power_supply *ps,
  		val->intval = charger->max_chg_volt_uv;
  		break;
  	case POWER_SUPPLY_PROP_VOLTAGE_MAX_DESIGN:
  		val->intval = charger->bat_voltage_max_design_uv;
  		break;
 +	case POWER_SUPPLY_PROP_TEMP:
-+		val->intval = charger->bat_ts_celsius;
++		if (!charger->bat_ts_valid)
++			return -ENODATA;
++		val->intval = charger->bat_ts_decicelsius;
 +		break;
  	default:
  		return -EINVAL;
  	}
  	return 0;
  }
-@@ -699,10 +728,11 @@ static enum power_supply_property rk817_bat_props[] = {
+@@ -699,10 +757,11 @@ static enum power_supply_property rk817_bat_props[] = {
  	POWER_SUPPLY_PROP_CONSTANT_CHARGE_CURRENT_MAX,
  	POWER_SUPPLY_PROP_CURRENT_AVG,
  	POWER_SUPPLY_PROP_VOLTAGE_MIN_DESIGN,
@@ -121,7 +149,7 @@ index 2b0d5bdc6dd6..4497bf59bd09 100644
  static enum power_supply_property rk817_chg_props[] = {
  	POWER_SUPPLY_PROP_ONLINE,
  	POWER_SUPPLY_PROP_USB_TYPE,
-@@ -1096,11 +1126,12 @@ static void rk817_cleanup_node(void *data)
+@@ -1096,11 +1155,11 @@ static void rk817_cleanup_node(void *data)
  
  static int rk817_charger_probe(struct platform_device *pdev)
  {
@@ -129,31 +157,52 @@ index 2b0d5bdc6dd6..4497bf59bd09 100644
  	struct rk817_charger *charger;
 -	struct device_node *node;
 +	struct device_node *node, *battery_node;
-+	struct fwnode_handle *fwnode;
  	struct power_supply_battery_info *bat_info;
  	struct device *dev = &pdev->dev;
  	struct power_supply_config pscfg = {};
  	int plugin_irq, plugout_irq;
  	int of_value;
-@@ -1222,10 +1253,24 @@ static int rk817_charger_probe(struct platform_device *pdev)
+@@ -1222,10 +1281,46 @@ static int rk817_charger_probe(struct platform_device *pdev)
  	if (ret)
  		return ret;
  
  	power_supply_put_battery_info(charger->bat_ps, bat_info);
  
-+	// read thermistor characteristics
-+	battery_node = of_parse_phandle(charger->bat_ps->dev.of_node, "monitored-battery", 0);
-+	fwnode = fwnode_handle_get(of_fwnode_handle(battery_node));
-+	fwnode_property_read_u32(fwnode, "thermistor-b-constant",
-+				 &charger->bat_thermistor_b_constant);
-+	fwnode_property_read_u32(fwnode, "thermistor-pivot-resistance-ohms",
-+				 &charger->bat_thermistor_pivot_resistance_ohms);
-+	fwnode_property_read_u32(fwnode, "thermistor-pivot-temperature-celsius",
-+				 &charger->bat_thermistor_pivot_temperature_kelvin);
-+	charger->bat_thermistor_pivot_temperature_kelvin *= 100;
-+	charger->bat_thermistor_pivot_temperature_kelvin += 27315; // K
-+	fwnode_handle_put(fwnode);
-+	of_node_put(battery_node);
++	/*
++	 * Thermistor calibration is optional. Keep the battery supply usable
++	 * when the device tree does not provide the calibration properties.
++	 */
++	battery_node = of_parse_phandle(charger->bat_ps->dev.of_node,
++					"monitored-battery", 0);
++	if (!battery_node) {
++		dev_warn(dev, "no monitored battery; temperature unavailable\n");
++	} else {
++		u32 b_constant, pivot_resistance, pivot_temperature;
++
++		ret = of_property_read_u32(battery_node, "thermistor-b-constant",
++					   &b_constant);
++		if (!ret)
++			ret = of_property_read_u32(battery_node,
++						   "thermistor-pivot-resistance-ohms",
++						   &pivot_resistance);
++		if (!ret)
++			ret = of_property_read_u32(battery_node,
++						   "thermistor-pivot-temperature-celsius",
++						   &pivot_temperature);
++		if (ret || !b_constant || !pivot_resistance ||
++		    pivot_temperature > 1000) {
++			dev_warn(dev,
++				 "invalid or missing thermistor calibration; temperature unavailable\n");
++		} else {
++			charger->bat_thermistor_b_constant = b_constant;
++			charger->bat_thermistor_pivot_resistance_ohms =
++				pivot_resistance;
++			charger->bat_thermistor_pivot_temperature_kelvin =
++				pivot_temperature * 100 + 27315;
++			charger->bat_thermistor_valid = true;
++		}
++		of_node_put(battery_node);
++	}
 +
  	plugin_irq = platform_get_irq(pdev, 0);
  	if (plugin_irq < 0)
@@ -179,4 +228,3 @@ index 7ffc904c864c..957bebb52a85 100644
  #define RK817_GAS_GAUGE_Q_MAX_H3	0x82
 -- 
 Created with Armbian build tools https://github.com/armbian/build
-
